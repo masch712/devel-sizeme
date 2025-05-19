@@ -963,7 +963,9 @@ magic_size(pTHX_ const SV * const thing, struct state *st, pPATH) {
   }
 }
 
-#define cv_name(cv) S_cv_name(aTHX_ cv)
+/* In Perl 5.30.1, cv_name takes 3 arguments */
+#undef cv_name
+#define cv_name_sizeme(cv) S_cv_name(aTHX_ cv)
 char *
 S_cv_name(pTHX_ CV *cv)
 {
@@ -1663,7 +1665,7 @@ sv_size(pTHX_ struct state *const st, pPATH, const SV * const orig_thing)
     goto freescalar;
 
   case SVt_PVCV: TAG;
-    ADD_ATTR(st, NPattr_LABEL, cv_name((CV *)thing), 0);
+    ADD_ATTR(st, NPattr_LABEL, cv_name_sizeme((CV *)thing), 0);
     sv_size(aTHX_ st, NPathLink("CvGV"), (SV *)CvGV(thing));
     padlist_size(aTHX_ st, NPathLink("CvPADLIST"), CvPADLIST(thing));
     if (!CvWEAKOUTSIDE(thing)) /* XXX */
@@ -1775,11 +1777,7 @@ sv_size(pTHX_ struct state *const st, pPATH, const SV * const orig_thing)
   if (type >= SVt_PVMG) {
     if (SvMAGICAL(thing))
       magic_size(aTHX_ thing, st, NPathLink("MG"));
-#ifdef SvOURSTASH
-    /* SVpad_OUR shares same flag bit as SVpbm_VALID and others */
-    if (type == SVt_PVGV && SvPAD_OUR(thing) && SvOURSTASH(thing))
-      sv_size(aTHX_ st, NPathLink("SvOURSTASH"), (SV *)SvOURSTASH(thing));
-#endif
+/* SvOURSTASH code removed for Perl 5.30.1 compatibility */
     if (SvOBJECT(thing))
       sv_size(aTHX_ st, NPathLink("SvSTASH"), (SV *)SvSTASH(thing));
   }
@@ -1792,7 +1790,7 @@ free_memnode_state(pTHX_ struct state *st)
 {
     if (st->node_stream_fh && st->node_stream_name && *st->node_stream_name) {
         Pid_t pid = getpid();
-        NV dur = gettimeofday_nv(aTHX) - st->start_time_nv;
+        NV dur = gettimeofday_nv(aTHX)-st->start_time_nv;
         if (st->opts & SMopt_IS_TEST) {
             pid = 0; dur = 0;
         }
@@ -2026,8 +2024,10 @@ parser_size(pTHX_ struct state *const st, pPATH, yy_parser *parser)
 
   NPathPushLink("stack");
   NPathPushNode("stack", NPtype_NAME);
-  ADD_SIZE(st, "yy_stack_frames", parser->stack_size * sizeof(yy_stack_frame));
-  ADD_ATTR(st, NPattr_NOTE, "n", parser->stack_size);
+  /* Perl 5.30.1 uses stack_max1 as a pointer, not a size */
+  size_t stack_frames = parser->ps - parser->stack + 1;
+  ADD_SIZE(st, "yy_stack_frames", stack_frames * sizeof(yy_stack_frame));
+  ADD_ATTR(st, NPattr_NOTE, "n", (UV)stack_frames);
   for (ps = parser->stack; ps <= parser->ps; ps++) {
 #if (PERL_BCDVERSION >= 0x5011002) /* roughly */
     if (sv_size(aTHX_ st, NPathLink("compcv"), (SV*)ps->compcv))
@@ -2223,7 +2223,10 @@ perl_size(pTHX_ struct state *const st, pPATH)
 #ifdef POSIX_CC_COUNT
     for (i = 0; i < POSIX_CC_COUNT; i++) {
         sv_size(aTHX_ st, NPathLink("PL_Posix_ptrs"), PL_Posix_ptrs[i]);
+        /* PL_L1Posix_ptrs no longer exists in Perl 5.30.1 */
+#if PERL_VERSION < 30
         sv_size(aTHX_ st, NPathLink("PL_L1Posix_ptrs"), PL_L1Posix_ptrs[i]);
+#endif
         sv_size(aTHX_ st, NPathLink("PL_XPosix_ptrs"), PL_XPosix_ptrs[i]);
     }
 #endif
