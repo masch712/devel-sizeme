@@ -1361,15 +1361,18 @@ const U8 body_sizes[SVt_LAST] = {
 static void
 padlist_size(pTHX_ struct state *const st, pPATH, PADLIST *padl)
 {
-#ifdef PadlistNAMES
+#if defined(PadnameREFCNT) || defined(PadlistNAMES)
     dNPathNodes(2, NPathArg);
 #else
     dNPathUseParent(NPathArg);
 #endif
+#ifdef PadnameREFCNT
+    PADNAMELIST *pad_names;
+    PADNAME **pname;
+#else
     const AV *pad_name;
-    const AV *pad;
     SV **pname;
-    SV **ppad;
+#endif
     I32 ix;
 
     if (!padl)
@@ -1377,12 +1380,59 @@ padlist_size(pTHX_ struct state *const st, pPATH, PADLIST *padl)
     if( 0 && !check_new(st, padl)) /* XXX ? */
         return;
 
-#ifdef PadlistNAMES
+#ifdef PadnameREFCNT
+
+    pad_names = PadlistNAMES(padl);
+    pname = PadnamelistARRAY(pad_names);
+
+    NPathPushNode("PADLIST", NPtype_NAME);
+
+    ADD_SIZE(st, "PADLIST", sizeof(PADLIST));
+    if (check_new(st, pad_names))
+        ADD_SIZE(st, "PADNAMELIST", sizeof(PADNAMELIST));
+    if (check_new(st, pname))
+        ADD_SIZE(st, "PADNAME pointers", sizeof(PADNAME*) * (pad_names->xpadnl_max + 1));
+    /* add attributes describing the pads */
+    for (ix = 1; ix <= PadnamelistMAX(pad_names); ix++) {
+        const PADNAME *padname = pname[ix];
+        const char *name = padname ? PadnamePV(padname) : NULL;
+        if (name && PadnameLEN(padname)) {
+            if (PadnameOUTER(padname)) {
+                const PADNAME *owner = PADNAME_FROM_PV(name);
+                if (check_new(st, padname))
+                    ADD_SIZE(st, "PADNAME", sizeof(PADNAME));
+                if (check_new(st, owner)) {
+                    ADD_SIZE(st, "PADNAME",
+                        STRUCT_OFFSET(struct padname_with_str, xpadn_str) + PadnameLEN(owner) + 1);
+                }
+                ADD_ATTR(st, NPattr_PADFAKE, name, ix);
+            }
+            else {
+                if (check_new(st, padname)) {
+                    ADD_SIZE(st, "PADNAME",
+                        STRUCT_OFFSET(struct padname_with_str, xpadn_str) + PadnameLEN(padname) + 1);
+                }
+                ADD_ATTR(st, NPattr_PADNAME, name, ix);
+            }
+        }
+        else {
+            ADD_ATTR(st, NPattr_PADTMP, "SVs_PADTMP", ix);
+        }
+    }
+
+    ix = PadlistMAX(padl) + 1;
+    ADD_SIZE(st, "PADs", sizeof(PAD*) * ix);
+
+    for (ix = 1; ix <= PadlistMAX(padl); ix++) {
+	sv_size(aTHX_ st, NPathLink("elem"), (SV*)PadlistARRAY(padl)[ix]);
+        if (NP->seqn) /* link was emitted, so we can add attr XXX encapsulate */
+            ADD_LINK_ATTR_TO_TOP(st, NPattr_NOTE, "i", ix);
+    }
+
+#elif defined(PadlistNAMES)
 
     pad_name = *PadlistARRAY(padl);
-    pad = PadlistARRAY(padl)[1];
     pname = AvARRAY(pad_name);
-    ppad = AvARRAY(pad);
 
     NPathPushNode("PADLIST", NPtype_NAME);
 
@@ -1667,12 +1717,12 @@ sv_size(pTHX_ struct state *const st, pPATH, const SV * const orig_thing)
   case SVt_PVCV: TAG;
     ADD_ATTR(st, NPattr_LABEL, cv_name_sizeme((CV *)thing), 0);
     sv_size(aTHX_ st, NPathLink("CvGV"), (SV *)CvGV(thing));
-    padlist_size(aTHX_ st, NPathLink("CvPADLIST"), CvPADLIST(thing));
     if (!CvWEAKOUTSIDE(thing)) /* XXX */
         sv_size(aTHX_ st, NPathLink("CvOUTSIDE"), (SV *)CvOUTSIDE(thing));
     if (CvISXSUB(thing)) {
 	sv_size(aTHX_ st, NPathLink("cv_const_sv"), cv_const_sv((CV *)thing));
     } else {
+	padlist_size(aTHX_ st, NPathLink("CvPADLIST"), CvPADLIST(thing));
 	/* Note that we don't chase CvSTART */
 	op_size(aTHX_ CvROOT(thing), st, NPathLinkAndNode("CvROOT", "OPs"));
     }
@@ -2547,4 +2597,3 @@ CODE:
 }
 OUTPUT:
   RETVAL
-

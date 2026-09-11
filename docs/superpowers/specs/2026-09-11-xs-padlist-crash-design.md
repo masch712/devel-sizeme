@@ -8,11 +8,23 @@ interpreting it as a padlist causes a segmentation fault. This breaks sizing an
 XS subroutine directly and whole-interpreter profiling through `perl_size()` or
 `heap_size()`.
 
+Perl 5.30 also stores pure-Perl pad names in `PADNAMELIST` and `PADNAME`
+structures rather than the older `AV` and `SV` representation. Treating those
+structures as the legacy types causes a second segmentation fault once XS CVs
+are handled correctly.
+
 ## Design
 
 Check `CvISXSUB()` before accessing CV fields whose meaning differs for XS and
 pure-Perl subroutines. XS CVs will continue to traverse `cv_const_sv`. Pure-Perl
 CVs will continue to traverse `CvPADLIST()` and `CvROOT()`.
+
+Within pure-Perl padlists, use `PadnameREFCNT` as the feature test for modern
+`PADNAME` structures, then account for each unique name and its inline string.
+Captured outer lexicals will count both their fixed-size proxy and their
+separately allocated owning name.
+Retain the existing `PadlistNAMES` and legacy AV implementations for older Perl
+versions.
 
 The change will remain in the existing `SVt_PVCV` branch and will not add Perl
 version checks. The CV representation, rather than the Perl version, determines

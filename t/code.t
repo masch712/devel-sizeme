@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 
 use strict;
-use Test::More tests => 12;
+use Test::More tests => 14;
 use Devel::Peek qw(Dump);
 use Devel::SizeMe ':all';
 
@@ -53,3 +53,30 @@ my $short_pvop = total_size(sub {goto GLIT});
 my $long_pvop = total_size(sub {goto KREEK_KREEK_CLANK_CLANK});
 cmp_ok($short_pvop, '>', $anon_size, 'OPc_PVOP can be measured');
 is($long_pvop, $short_pvop + 19, 'the only size difference is the label length');
+
+my $short_padname = total_size(sub { my $x = 1; return $x; });
+my $long_padname = total_size(sub {
+    my $lexical_name_long_enough_to_measure = 1;
+    return $lexical_name_long_enough_to_measure;
+});
+cmp_ok($long_padname, '>', $short_padname, 'pad name storage contributes to CV size');
+
+SKIP: {
+    if ($] < 5.022) {
+        skip('PADNAME structs were introduced in Perl 5.22', 1);
+    }
+
+    my $padname_profile = 'test_code_padname.dat';
+    unlink $padname_profile;
+    {
+        local $ENV{SIZEME} = $padname_profile;
+        my $outer = 1;
+        my $closure = sub { return $outer; };
+        total_size($closure);
+    }
+    open(my $padname_fh, '<', $padname_profile) or BAIL_OUT("Unable to read $padname_profile: $!");
+    my $padname_records = grep { / PADNAME$/ } <$padname_fh>;
+    close($padname_fh) or BAIL_OUT("Unable to close $padname_profile: $!");
+    is($padname_records, 2, 'an outer pad name records its proxy and owning allocation');
+    unlink $padname_profile;
+}
