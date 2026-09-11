@@ -1,9 +1,14 @@
 #!/usr/bin/perl -w
 
 use strict;
-use Test::More tests => 18;
+use Test::More tests => 20;
 use Devel::SizeMe ':all';
 require Tie::Scalar;
+
+is(system($^X, '-Mblib', '-MDevel::SizeMe=:all', '-e', '"abc" =~ /(a)/; total_size(\@+);'), 0,
+   'total_size(\@+) does not segfault');
+is(system($^X, '-Mblib', '-MDevel::SizeMe=:all', '-e', '"abc" =~ /(a)/; total_size(\@-);'), 0,
+   'total_size(\@-) does not segfault');
 
 {
     my $string = 'Perl Rules';

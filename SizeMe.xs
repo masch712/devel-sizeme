@@ -933,8 +933,11 @@ magic_size(pTHX_ const SV * const thing, struct state *st, pPATH) {
 
 
     TRY_TO_CATCH_SEGV {
-        /* XXX only chase mg_obj if mg->mg_flags & MGf_REFCOUNTED ? */
-	sv_size(aTHX_ st, NPathLink("mg_obj"), magic_pointer->mg_obj);
+        /* Unrefcounted mg_obj values aren't necessarily SV pointers. */
+#ifdef MGf_REFCOUNTED
+	if (magic_pointer->mg_flags & MGf_REFCOUNTED)
+#endif
+	    sv_size(aTHX_ st, NPathLink("mg_obj"), magic_pointer->mg_obj);
 	if (magic_pointer->mg_len == HEf_SVKEY) {
 	    sv_size(aTHX_ st, NPathLink("mg_ptr"), (SV *)magic_pointer->mg_ptr);
 	}
