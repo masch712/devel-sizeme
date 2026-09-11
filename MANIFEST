@@ -42,6 +42,7 @@ t/10-sizeme.t
 t/20-smt-basic.dot
 t/20-smt-basic.smt
 t/20-smt-basic.t
+t/30-sqlite.t
 t/basic.t
 t/code.t
 t/globs.t

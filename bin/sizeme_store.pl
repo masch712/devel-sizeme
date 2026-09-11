@@ -103,9 +103,10 @@ my $j = JSON::XS->new->ascii->pretty(0);
 my ($dbh, $node_ins_sth);
 if ($opt_db) {
     $dbh = DBI->connect("dbi:SQLite:dbname=$opt_db","","", {
-        RaiseError => 1, PrintError => 0, AutoCommit => 0
+        RaiseError => 1, PrintError => 0, AutoCommit => 1
     });
     $dbh->do("PRAGMA synchronous = OFF");
+    $dbh->{AutoCommit} = 0;
 }
 
 my @outputs;
